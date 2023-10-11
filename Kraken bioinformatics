@@ -1,0 +1,466 @@
+
+library(knitr)
+library(dplyr)
+library(ggplot2)
+library(DESeq2)
+library("phyloseq")
+library(microbiomeutilities) # some utility tools 
+library(ranacapa)
+library(MicrobeR) # Data visualization not available
+library(microbiome) # Data analysis and visualization
+library(microbiomeSeq)
+library(microbiomeutilities) # some utility tools 
+library('themetagenomics')
+library("ALDEx2")
+library("ANCOMBC")
+require("vegan")
+require("ape")
+
+setwd("/HANGER/katie/kraken/results")
+.libPaths("/home/aaron/R/x86_64-pc-linux-gnu-library/3.6/")
+library(knitr)
+library(dplyr)
+library(ggplot2)
+
+file_listB <- list.files(path = "/HANGER/katie/kraken/summary",
+                         pattern="*_kraken2.report.summary$",
+                         recursive = TRUE,
+                         full.names = TRUE)
+head(file_listB)
+IDs <- as.data.frame(read.csv("/HANGER/katie/kraken/kraken_database/ktaxonomy.tsv", sep="\t", header=F))
+colnames(IDs)[1]<-c("tax_code")
+colnames(IDs)[9]<-c("name")
+IDs<-IDs[,c(1,5,9)]
+
+
+for (i in  1:length(file_listB)){
+  oneFile <- file_listB[i]
+  oneFileData <- as.data.frame(read.delim(oneFile, sep="\t", header=F, skip=1))
+  
+  #extract virus name and aligned columns
+  oneFileDataSmall <- oneFileData[,c(5,4,2)]
+  oneFileDataSmall<-oneFileDataSmall[oneFileDataSmall$V4=="G",]
+  oneFileDataSmall$V4<-NULL
+  oneFileName <- unlist(strsplit(oneFile, "/"))
+  #get only file name - that last item
+  oneFileName <- oneFileName[length(oneFileName)]
+  oneFileName <- unlist(strsplit(oneFileName, "_"))
+  oneFileName<-oneFileName[1]
+  
+  
+  colnames(oneFileDataSmall) <- c("tax_code",oneFileName)
+  
+  
+  IDs<-left_join(IDs,oneFileDataSmall, by="tax_code")
+  
+  
+  
+}
+df<-IDs[3:nrow(IDs),]
+df[is.na(df)] <- 0
+rownames(df)<-paste0(df[,1],sep="_",df[,3])
+df[,c(1,2,3)]<-NULL
+df$sums<-rowSums(df)
+df<-df[order(df$sums,decreasing = TRUE),]
+head(df)
+
+write.csv(df, "abundance_data_kraken.csv")
+
+IDs <- as.data.frame(read.csv("/HANGER/katie/kraken/kraken_database/ktaxonomy.tsv", sep="\t", header=F))
+colnames(IDs)[9]<-c("name")
+IDs<-as.data.frame(IDs[,c(1)])
+colnames(IDs)[1]<-c("tax_code")
+
+IDs2<-IDs
+
+for (i in  1:length(file_listB)){
+  oneFile <- file_listB[i]
+  oneFileData <- as.data.frame(read.delim(oneFile, sep="\t", header=F, skip=1))
+  
+  #extract virus name and aligned columns
+  oneFileDataSmall <- oneFileData[,c(5,4,3)]
+  oneFileName <- unlist(strsplit(oneFile, "/"))
+  #get only file name - that last item
+  oneFileName <- oneFileName[length(oneFileName)]
+  oneFileName <- unlist(strsplit(oneFileName, "_"))
+  oneFileName<-oneFileName[1]
+  
+  oneFileDataSmall$V4<-NULL
+  colnames(oneFileDataSmall) <- c("tax_code",oneFileName)
+  
+  IDs<-left_join(IDs,oneFileDataSmall, by="tax_code")
+  IDs[is.na(IDs)] <- 0
+  
+  
+}
+
+keep<-IDs[rowSums(IDs[,2:ncol(IDs)])>0,]
+
+dim(cut)
+###574  kept and 25831 cut out
+
+write.csv(keep, "kraken_abundance_species.csv", row.names =T)
+write.csv(IDs, "kraken_abundance_species_not_filtered.csv", row.names =T)
+
+
+
+
+load("C:/Users/steaa35p/OneDrive - University of Otago/Current Students/Katie CW/R_Kraken/kraken_data.RData")
+save.image("C:/Users/steaa35p/OneDrive - University of Otago/Current Students/Katie CW/R_Kraken/kraken_data.RData")
+setwd("C:/Users/steaa35p/OneDrive - University of Otago/Current Students/Katie CW/R_Kraken")
+Kraken_taxa<-read.delim(file="ktaxonomy.tsv", sep="\t")
+
+
+######alpha and beta diversity of bacteriophages #####
+Krak_species_abundance<-read.csv(file="kraken_abundance_species_not_filtered.csv",header=TRUE, row.names=2)
+Krak_species_abundance$X<-NULL
+
+Kraken_taxa<-read.delim(file="ktaxonomy.tsv", sep="\t", header = TRUE)
+colnames(Kraken_taxa)[1]<-c("tax_code")
+colnames(Kraken_taxa)[9]<-c("name")
+Kraken_taxa<-Kraken_taxa[,c(1,3,5,9)]
+colnames(Kraken_taxa)[2]<-c("Genus_code")
+colnames(Kraken_taxa)[3]<-c("Rank_level")
+
+
+rownames(Kraken_taxa)<-Kraken_taxa$tax_code
+Kraken_taxa<-as.matrix(Kraken_taxa)
+#freq_table$X<-NULL
+####Phyloseq
+OTU=otu_table(Krak_species_abundance,taxa_are_rows=TRUE)
+
+TAX = tax_table(Kraken_taxa)
+
+rownames(kraken_metadata)<-kraken_metadata$sample_id
+physeq=phyloseq(OTU,TAX)
+sd<-sample_data(kraken_metadata)
+#plot_bar(physeq1,fill="Family")
+library(ape)
+random_tree= rtree(ntaxa(physeq), rooted=TRUE, tip.label=taxa_names(physeq))
+
+physeq1<-merge_phyloseq(physeq,sd, random_tree)
+physeq2<-phyloseq(features=OTU,taxonomy=TAX,metadata=sd, tree=random_tree)
+
+
+physeq.genus <- aggregate_taxa(physeq1, "Rank_level")
+
+
+top_four <- top_taxa(physeq1, 4)
+mycols <- c("salmon", "skyblue","seagreen3","mediumpurple")
+top_genera <- plot_listed_taxa(physeq1, top_four, 
+                               group= "PHASE",
+                               group.colors = mycols,
+                               add.violin = F,
+                               dot.opacity = 0.25,
+                               box.opacity = 0.25,
+                               panel.arrange= "wrap") + ylab("Relative frequency") +
+  theme(axis.text.x = element_text(size=10,angle = 45, hjust = 1))
+
+comps <- make_pairs(sample_data(physeq1)$PHASE)
+
+top_genera + stat_compare_means(
+  comparisons = comps,
+  label = "p.format",
+  tip.length = 0.05,
+  symnum.args = list(
+    cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), 
+    symbols = c("xxxx", "***", "**", "*", "ns")
+  ),
+  method = "wilcox.test") + scale_y_continuous(labels = scales::percent)
+
+
+
+
+physeq_rarefy <- rarefy_even_depth(physeq1, rngseed=3000, sample.size=1000 , replace=F)
+
+ggrare(physeq_rarefy, step = 50, color="PHASE", label = "Sample", se = TRUE) + theme(axis.line = element_line(color = 'black'), 
+                                                                                     panel.background = element_blank() ,
+                                                                                     panel.grid.major = element_blank() , 
+                                                                                     panel.grid.minor = element_blank(), 
+                                                                                     panel.border = element_blank(), 
+                                                                                     axis.text.x = element_text(color = 'black', size=15), 
+                                                                                     axis.text.y = element_text(color = 'black', size=15),
+                                                                                     legend.position = "none",
+                                                                                     plot.title = element_text(hjust = 0.5))
+
+
+ggsave(filename ="sampling_rarefaction_curves.jpeg",dpi = 700, scale = 1,
+       limitsize = TRUE)
+
+###31700 is from qiime2
+
+library(ggpubr)
+a.div <- plot_richness(physeq_rarefy, x="PHASE", measures=c("Shannon", "simpson", "Observed"), 
+                       color = "PHASE") + geom_boxplot() + theme_bw() + theme(axis.line = element_line(color = 'black'), 
+                                                                              panel.background = element_blank() ,
+                                                                              panel.grid.major = element_blank() , 
+                                                                              panel.grid.minor = element_blank(), 
+                                                                              panel.border = element_blank(), 
+                                                                              axis.text.x = element_text(color = 'black', size=15), 
+                                                                              axis.text.y = element_text(color = 'black', size=15),
+                                                                              axis.title.x = element_blank(),
+                                                                              axis.title.y = element_blank(),
+                                                                              legend.position = "none",
+                                                                              plot.title = element_text(hjust = 0.5))
+
+
+# adding statistical support
+a.div + stat_compare_means(
+  comparisons = comps,
+  label = "p.signif",
+  tip.length = 0.05,
+  symnum.args = list(
+    cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), 
+    symbols = c("xxxx", "***", "**", "*", "ns")
+  ),
+  method = "wilcox.test") 
+
+ggsave(filename ="alpha_diversity_bacteriophages_kraken_species.jpeg",dpi = 700, scale = 1,
+       limitsize = TRUE)
+
+####
+
+###having a look at permanova out of curiosity
+
+pseq_genus.rel <- microbiome::transform(physeq1, "compositional")
+p <- plot_landscape(pseq_genus.rel, method = "NMDS", distance = "bray", col = "PHASE", size = 3)
+print(p)
+
+
+
+ggsave(filename ="PCA_plot_normalised_bray_curtis.jpeg",dpi = 700, scale = 1,
+       limitsize = TRUE)
+
+
+otu2 <- abundances(pseq_genus.rel)
+
+
+
+
+
+xdf<-as.data.frame(otu_table(physeq1))
+xdf<-xdf[order(rowSums(xdf),decreasing=TRUE),]
+head(xdf)
+
+
+##########################calculating sample abundance and ###graphing################infanlllllll
+perc2<-NULL
+perc<-NULL
+df_final_filtered_infants<-as.data.frame(xdf[,kraken_metadata$PHASE=="INFANT",])
+df_final_filtered_infants$sums<-rowSums(df_final_filtered_infants)
+perc=c()
+for (i in 1 : (length(rownames(df_final_filtered_infants))))
+{
+  perc[i]=round(df_final_filtered_infants$sums[i]/sum(df_final_filtered_infants$sums),4)
+}
+
+
+perc2=as.matrix(perc)
+rownames(perc2)=rownames(df_final_filtered_infants)
+colnames(perc2)=c('')
+df_final_filtered_infants=as.matrix(df_final_filtered_infants)
+colnames(perc2)="Detected_frequency"
+
+filt=(perc2)<0.005
+perc2=as.data.frame(perc2[!filt,])
+table(filt)
+##79 low abundance were filtered out, 22 were kept###
+
+infant_frequency<-as.data.frame(perc2)
+colnames(infant_frequency)<-"Detected_frequency"
+low_abundance=as.data.frame(round(1-(sum(infant_frequency)),2))
+colnames(low_abundance)<-"Detected_frequency"
+low_abundance$Genus<-"Low abundance"
+
+
+
+infant_frequency$Genus<-Kraken_taxa[match(rownames(infant_frequency),rownames(Kraken_taxa)),"name"]
+
+infant_frequency=rbind(infant_frequency, low_abundance)
+infant_frequency$Group<-"Infants"
+
+
+#########################mothers##############
+
+
+perc2<-NULL
+perc<-NULL
+df_final_filtered_mothers<-as.data.frame(xdf[,kraken_metadata$PHASE=="MOTHER",])
+df_final_filtered_mothers$sums<-rowSums(df_final_filtered_mothers)
+
+perc=c()
+for (i in 1 : (length(rownames(df_final_filtered_mothers))))
+{
+  perc[i]=round(df_final_filtered_mothers$sums[i]/sum(df_final_filtered_mothers$sums),4)
+}
+
+
+
+
+perc2=as.matrix(perc)
+rownames(perc2)=rownames(df_final_filtered_mothers)
+colnames(perc2)=c('')
+df_final_filtered_mothers=as.matrix(df_final_filtered_mothers)
+colnames(perc2)="Detected_frequency"
+
+
+filt=(perc2)<0.005
+perc2=as.data.frame(perc2[!filt,])
+table(filt)
+##82 low abundance were filtered out, 19 were kept###
+
+mothers_frequency<-as.data.frame(perc2)
+colnames(mothers_frequency)<-"Detected_frequency"
+low_abundance=as.data.frame(round(1-(sum(mothers_frequency)),2))
+colnames(low_abundance)<-"Detected_frequency"
+low_abundance$Genus<-"Low abundance"
+mothers_frequency$Genus<-Kraken_taxa[match(rownames(mothers_frequency),rownames(Kraken_taxa)),"name"]
+
+mothers_frequency=rbind(mothers_frequency, low_abundance)
+mothers_frequency$Group<-"Mothers"
+
+
+freq_table<-rbind(mothers_frequency, infant_frequency)
+write.csv(freq_table, file="Genus_abundance_Kraken.csv")
+
+
+
+ggplot(freq_table,aes( fill=Genus,x=Group,y=Detected_frequency)) + geom_bar(position="stack", stat="identity", colour="white") + xlab(paste("Group")) +
+  ylab(paste("Abundance")) + theme(axis.line = element_line(color = 'black'), 
+                                   panel.background = element_blank() ,
+                                   panel.grid.major = element_blank() , 
+                                   panel.grid.minor = element_blank(), 
+                                   panel.border = element_blank(), 
+                                   axis.text.x = element_text(color = 'black', size=15), 
+                                   axis.text.y = element_text(color = 'black', size=15),
+                                   axis.title.x = element_blank(),
+                                   axis.title.y = element_blank())
+
+ggsave(filename ="Kraken_genus_abundance.jpeg",dpi = 700, scale = 1,
+       limitsize = TRUE)
+graphics.off()
+
+
+####checking the contribution of each person to the total abundance####
+
+xdf_infants<-xdf[,kraken_metadata$PHASE=="INFANT",]
+sum(xdf_infants)
+#2135430
+xdf_infants<-xdf_infants[top_four,]
+dim(xdf_infants)
+xdf_infants<-as.data.frame(t(xdf_infants))
+xdf_infants$PHASE<-as.character("Infants")
+colnames(xdf_infants)<-unlist(sapply(strsplit(colnames(xdf_infants),"_"),tail,1))
+
+xdf_mother<-xdf[,kraken_metadata$PHASE=="MOTHER",]
+sum(xdf_mother)
+#621598
+xdf_mother<-xdf_mother[top_four,]
+
+dim(xdf_mother)
+head(xdf_mother)
+xdf_mother<-as.data.frame(t(xdf_mother))
+xdf_mother$PHASE<-as.character("Mothers")
+colnames(xdf_mother)<-unlist(sapply(strsplit(colnames(xdf_mother),"_"),tail,1))
+
+
+#sum(xdf_mother[,1:4])
+file=xdf_mother
+perc=c()
+for (a in 1:4) {
+  j=a
+  
+  for (i in 1 : (length(rownames(file))))
+  {
+    perc[i]=round(file[i,j]/621598,4)*100
+  }
+  file[,j]<-as.data.frame(perc)
+  
+}
+xdf_mother<-file
+
+file=xdf_infants
+perc=c()
+for (a in 1:4) {
+  j=a
+  
+  for (i in 1 : (length(rownames(file))))
+  {
+    perc[i]=round(file[i,j]/2135430,4)*100
+  }
+  file[,j]<-as.data.frame(perc)
+  
+}
+
+
+xdf_infants<-file
+
+total<-rbind(xdf_mother,xdf_infants)
+
+A<- ggplot(total,aes(x=PHASE,y=total[,1],color=PHASE)) + geom_boxplot() + geom_jitter() + ggtitle(colnames(total[1]))+
+  scale_color_manual("PHASE", values=c("salmon", "skyblue")) +
+  ylab(paste("Abundance")) + theme(axis.line = element_line(color = 'black'), 
+                                   panel.background = element_blank() ,
+                                   panel.grid.major = element_blank() , 
+                                   panel.grid.minor = element_blank(), 
+                                   panel.border = element_blank(), 
+                                   axis.text.x = element_text(color = 'black', size=15), 
+                                   axis.text.y = element_text(color = 'black', size=15),
+                                   axis.title.x = element_blank(),
+                                   axis.title.y = element_blank(),
+                                   legend.position = "none",
+                                   plot.title = element_text(hjust = 0.5))
+R<- ggplot(total,aes(x=PHASE,y=total[,2],color=PHASE)) + geom_boxplot() + geom_jitter() + ggtitle(colnames(total[2]))+
+  scale_color_manual("PHASE", values=c("salmon", "skyblue")) +
+  ylab(paste("Abundance")) + theme(axis.line = element_line(color = 'black'), 
+                                   panel.background = element_blank() ,
+                                   panel.grid.major = element_blank() , 
+                                   panel.grid.minor = element_blank(), 
+                                   panel.border = element_blank(), 
+                                   axis.text.x = element_text(color = 'black', size=15), 
+                                   axis.text.y = element_text(color = 'black', size=15),
+                                   axis.title.x = element_blank(),
+                                   axis.title.y = element_blank(),
+                                   legend.position = "none",
+                                   plot.title = element_text(hjust = 0.5))
+O<- ggplot(total,aes(x=PHASE,y=total[,3],color=PHASE)) + geom_boxplot() + geom_jitter() + ggtitle(colnames(total[3]))+
+  scale_color_manual("PHASE", values=c("salmon", "skyblue")) +
+  ylab(paste("Abundance")) + theme(axis.line = element_line(color = 'black'), 
+                                   panel.background = element_blank() ,
+                                   panel.grid.major = element_blank() , 
+                                   panel.grid.minor = element_blank(), 
+                                   panel.border = element_blank(), 
+                                   axis.text.x = element_text(color = 'black', size=15), 
+                                   axis.text.y = element_text(color = 'black', size=15),
+                                   axis.title.x = element_blank(),
+                                   axis.title.y = element_blank(),
+                                   legend.position = "none",
+                                   plot.title = element_text(hjust = 0.5))
+N<- ggplot(total,aes(x=PHASE,y=total[,4],color=PHASE)) + geom_boxplot() + geom_jitter() + ggtitle(colnames(total[4]))+
+  scale_color_manual("PHASE", values=c("salmon", "skyblue")) +
+  ylab(paste("Abundance")) + theme(axis.line = element_line(color = 'black'), 
+                                   panel.background = element_blank() ,
+                                   panel.grid.major = element_blank() , 
+                                   panel.grid.minor = element_blank(), 
+                                   panel.border = element_blank(), 
+                                   axis.text.x = element_text(color = 'black', size=15), 
+                                   axis.text.y = element_text(color = 'black', size=15),
+                                   axis.title.x = element_blank(),
+                                   axis.title.y = element_blank(),
+                                   legend.position = "none",
+                                   plot.title = element_text(hjust = 0.5))
+
+
+
+library(ggpubr)
+
+ggarrange(A, R, O, N , 
+          labels = c("A)", "B)", "C)","D)"),
+          ncol = 2, nrow = 2)
+
+
+ggsave(filename ="individuals_contribution_towards_total_abundance.jpeg",dpi = 700, scale = 1,
+       limitsize = TRUE)
+graphics.off()
+
+
